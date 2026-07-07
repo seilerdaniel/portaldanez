@@ -89,7 +89,7 @@ export default async function AdminDashboardPage() {
 
       <h2 className="mt-12 font-display text-xl font-semibold">Retiros de escritores</h2>
       <p className="mt-1 text-sm text-ink-soft">
-        Al marcar un retiro como "procesando", asegurate de haber iniciado la
+        Al marcar un retiro como &quot;procesando&quot;, asegurate de haber iniciado la
         transferencia real a la cuenta de Mercado Pago del autor. Este panel
         no ejecuta el pago — solo lleva el registro de su estado.
       </p>
