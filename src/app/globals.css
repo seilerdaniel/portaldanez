@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-paper text-ink font-body antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display;
+  }
+
+  /* Foco de teclado visible en todos lados — nunca outline: none sin reemplazo. */
+  :focus-visible {
+    outline: 2px solid theme("colors.wine.DEFAULT");
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* El "sello": insignia circular tipo matasellos para destacados/verificados. */
+  .sello {
+    @apply relative inline-flex h-16 w-16 flex-none items-center justify-center rounded-full
+      bg-mustard text-center font-display text-[0.6rem] font-semibold uppercase leading-tight
+      text-ink shadow-cover;
+    border: 2px dashed theme("colors.ink.DEFAULT" / 40%);
+  }
+}

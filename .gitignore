@@ -1,0 +1,25 @@
+# Next.js
+/.next/
+/out/
+
+# Dependencias
+/node_modules
+
+# Entorno
+.env
+.env.local
+.env*.local
+
+# Build / cache
+*.tsbuildinfo
+.eslintcache
+
+# Sistema operativo / editor
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+
+# Supabase local
+/supabase/.branches
+/supabase/.temp
