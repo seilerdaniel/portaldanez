@@ -255,6 +255,49 @@ problemático. Se agregó:
   `profile_id` en vez de depender de una cookie — más robusto y sin
   ninguna dependencia del comportamiento de cookies del navegador.
 
+## Panel por rol, menú de cuenta y Configuración
+
+- **Menú desplegable en el header** (click en el avatar): Mi perfil,
+  Favoritos, Notificaciones, Configuración, Cerrar sesión — y "Panel de
+  administración" también ahí si el usuario es admin.
+- **Pestañas por rol** (`PanelTabs`), agregadas en la parte de arriba de
+  cada panel:
+  - Lector: Mi biblioteca · Favoritos · Perfil · Configuración
+  - Escritor: Resumen · Mis libros · Pagos · Perfil · Configuración
+  - Admin: Resumen · Moderar libros · Perfil · Configuración
+- **`/configuracion`** (nueva, común a los tres roles): actualizar
+  contraseña, cerrar sesión, y eliminar cuenta (con confirmación explícita
+  escribiendo "ELIMINAR" — advierte a los escritores que borrar la cuenta
+  también borra sus libros publicados y el historial de ventas asociado,
+  por cómo están definidas las foreign keys en cascada desde la migración
+  inicial).
+- `/perfil` ahora también sugiere activar el rol de escritor a los
+  lectores que todavía no lo tienen.
+
+- **`INSERT ... RETURNING` chocando con RLS en `books`**: publicar un libro
+  fallaba con "new row violates row-level security policy" — pero solo
+  cuando el código pedía `.select("id").single()` encadenado al insert. Se
+  confirmó con pruebas manuales en SQL: el mismo insert sin pedir el
+  `RETURNING` funcionaba siempre; con `RETURNING`, Postgres evalúa la
+  política de SELECT sobre la fila recién insertada en un momento de la
+  transacción donde se comporta distinto a una lectura posterior separada
+  (que sí funciona). Corregido separando el insert de la lectura del id en
+  dos pasos, tanto en la publicación de libros como en el checkout
+  (`purchases`, por las dudas, aunque ahí no se confirmó el mismo síntoma).
+
+- **El checkout rechazaba TODAS las compras, no solo las de autores sin
+  conectar**: la verificación de "¿el autor conectó Mercado Pago?" leía el
+  campo `mercadopago_connected` directo de la tabla `profiles` del autor,
+  pero usando los permisos del **comprador** — y RLS en `profiles` (a
+  propósito) no deja que un usuario lea el perfil de otro. Esa lectura
+  devolvía vacío siempre, así que el checkout bloqueaba la compra de
+  cualquier libro, sin importar si el autor estaba realmente conectado.
+  Corregido: se sacó esa verificación rota y se dejó como única fuente de
+  verdad la que ya existía más abajo (`getValidAccessTokenParaEscritor`,
+  que corre con permisos de servidor y sí es correcta). El nombre del
+  autor para el resumen de la compra ahora se lee de `public_profiles`
+  (la vista pensada para exactamente este caso).
+
 ## Setup
 
 ```bash

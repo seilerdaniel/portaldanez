@@ -50,9 +50,7 @@ export async function POST(request: Request) {
 
   const { data: libro, error: errorLibro } = await supabase
     .from("books")
-    .select(
-      "id, title, price, author_id, profiles:author_id(display_name, mercadopago_connected)"
-    )
+    .select("id, title, price, author_id")
     .eq("id", bookId)
     .eq("is_published", true)
     .maybeSingle();
@@ -61,17 +59,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No encontramos ese libro." }, { status: 404 });
   }
 
-  const autorInfo = libro.profiles as unknown as {
-    display_name: string;
-    mercadopago_connected: boolean;
-  } | null;
-
-  if (!autorInfo?.mercadopago_connected) {
-    return NextResponse.json(
-      { error: "Este autor todavía no configuró cómo cobrar. Probá de nuevo más tarde." },
-      { status: 409 }
-    );
-  }
+  // El nombre del autor se lee de public_profiles (la vista pensada
+  // justamente para esto) en vez de la tabla profiles directamente: RLS en
+  // profiles solo deja ver la fila propia, así que leerla como el
+  // comprador (no el autor) siempre devolvía vacío — por eso NO se valida
+  // acá si el autor conectó Mercado Pago; esa verificación real (la que
+  // importa) es la de getValidAccessTokenParaEscritor más abajo, que sí
+  // corre con permisos de servidor.
+  const { data: autorInfo } = await supabase
+    .from("public_profiles")
+    .select("display_name")
+    .eq("id", libro.author_id)
+    .maybeSingle();
 
   const { data: compraExistente } = await supabase
     .from("purchases")
@@ -93,26 +92,40 @@ export async function POST(request: Request) {
   // restricción unique(user_id, book_id) y dejaría al usuario sin forma de
   // volver a intentar comprar ese libro. El upsert reinicia el intento.
   // Ya descartamos arriba que exista una compra "completed" para este par.
-  const { data: compra, error: errorCompra } = await supabase
+  //
+  // No encadenamos .select().single() al upsert: vimos en la práctica que
+  // pedirle a Postgres el RETURNING de una fila recién escrita evalúa la
+  // política de SELECT en un momento raro de la transacción y puede
+  // rechazarla con un error de RLS aunque una lectura posterior separada
+  // funcione perfecto (nos pasó con "books"). Por eso separamos el upsert
+  // de la lectura del id.
+  const { error: errorCompra } = await supabase.from("purchases").upsert(
+    {
+      user_id: user.id,
+      book_id: bookId,
+      amount: libro.price,
+      platform_fee: comision,
+      author_earning: gananciaAutor,
+      payment_status: "pending",
+      payment_method: "mercadopago",
+      payment_id: null,
+      completed_at: null,
+    },
+    { onConflict: "user_id,book_id" }
+  );
+
+  if (errorCompra) {
+    return NextResponse.json({ error: "No pudimos registrar la compra." }, { status: 500 });
+  }
+
+  const { data: compra, error: errorBusquedaCompra } = await supabase
     .from("purchases")
-    .upsert(
-      {
-        user_id: user.id,
-        book_id: bookId,
-        amount: libro.price,
-        platform_fee: comision,
-        author_earning: gananciaAutor,
-        payment_status: "pending",
-        payment_method: "mercadopago",
-        payment_id: null,
-        completed_at: null,
-      },
-      { onConflict: "user_id,book_id" }
-    )
     .select("id")
+    .eq("user_id", user.id)
+    .eq("book_id", bookId)
     .single();
 
-  if (errorCompra || !compra) {
+  if (errorBusquedaCompra || !compra) {
     return NextResponse.json({ error: "No pudimos registrar la compra." }, { status: 500 });
   }
 
@@ -129,7 +142,7 @@ export async function POST(request: Request) {
       {
         id: libro.id,
         title: libro.title,
-        description: `Ebook por ${autorInfo.display_name ?? "autor independiente"}`,
+        description: `Ebook por ${autorInfo?.display_name ?? "autor independiente"}`,
         quantity: 1,
         currency_id: "ARS",
         unit_price: libro.price,

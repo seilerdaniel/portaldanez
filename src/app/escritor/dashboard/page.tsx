@@ -4,6 +4,7 @@ import { requireEscritor } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatearMoneda } from "@/lib/constants";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 
 export const metadata: Metadata = { title: "Panel de escritor" };
 
@@ -40,6 +41,7 @@ export default async function DashboardEscritorPage() {
 
   return (
     <div className="container mx-auto max-w-4xl px-6 py-12">
+      <PanelTabs rol="escritor" />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-display text-3xl font-semibold">
           Hola, {actual.profile?.display_name}

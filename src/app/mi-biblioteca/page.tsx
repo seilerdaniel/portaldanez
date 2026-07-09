@@ -4,6 +4,7 @@ import { requireUsuario } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { BookCard } from "@/components/libros/book-card";
 import { formatearMoneda } from "@/lib/constants";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 
 export const metadata: Metadata = { title: "Mi biblioteca" };
 
@@ -50,6 +51,7 @@ export default async function MiBibliotecaPage() {
 
   return (
     <div className="container mx-auto max-w-6xl px-6 py-12">
+      <PanelTabs rol="lector" />
       <h1 className="font-display text-3xl font-semibold">Mi biblioteca</h1>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">

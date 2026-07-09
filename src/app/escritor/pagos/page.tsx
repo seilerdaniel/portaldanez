@@ -3,6 +3,7 @@ import { requireEscritor } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatearMoneda } from "@/lib/constants";
 import { ConexionMercadoPago } from "@/components/perfil/conexion-mercadopago";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 import { RetiroForm } from "./retiro-form";
 
 export const metadata: Metadata = { title: "Mis pagos" };
@@ -30,6 +31,7 @@ export default async function PagosEscritorPage({ searchParams }: PagosEscritorP
 
   return (
     <div className="container mx-auto max-w-3xl px-6 py-12">
+      <PanelTabs rol="escritor" />
       <h1 className="font-display text-3xl font-semibold">Mis pagos</h1>
       <p className="mt-2 text-ink-soft">Cómo y cuándo cobrás tus ventas.</p>
 

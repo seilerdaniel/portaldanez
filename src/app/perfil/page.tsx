@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireUsuario } from "@/lib/auth";
 import { AvatarUploader } from "@/components/perfil/avatar-uploader";
 import { PerfilForm } from "./perfil-form";
@@ -29,6 +30,15 @@ export default async function PerfilPage() {
           Rol{actual.roles.length > 1 ? "es" : ""}: {actual.roles.join(", ")}
         </p>
       </div>
+
+      {!actual.esEscritor && (
+        <div className="mt-6 rounded border border-mustard/30 bg-mustard/10 p-4 text-sm">
+          <p className="font-medium">¿Escribís? Publicá tu libro en Portal Danez.</p>
+          <Link href="/convertirse-escritor" className="mt-1 inline-block text-wine hover:underline">
+            Activar mi cuenta de escritor →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getUsuarioActual } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/layout/notification-bell";
-import { Avatar } from "@/components/ui/avatar";
+import { UserMenu } from "@/components/layout/user-menu";
 
 const navegacion = [
   { href: "/catalogo", label: "Catálogo" },
@@ -44,29 +44,18 @@ export async function Header() {
         <div className="flex items-center gap-3">
           {actual ? (
             <>
-              {actual.roles.includes("admin") && (
-                <Link href="/admin/dashboard" className="hidden text-sm font-medium hover:text-wine sm:inline">
-                  Admin
-                </Link>
-              )}
-              <NotificationBell userId={actual.user.id} />
-              <Link href="/favoritos" className="hidden text-sm font-medium hover:text-wine sm:inline">
-                Favoritos
-              </Link>
               <Link
                 href={actual.esEscritor ? "/escritor/dashboard" : "/mi-biblioteca"}
                 className="text-sm font-medium hover:text-wine"
               >
                 {actual.esEscritor ? "Mi panel" : "Mi biblioteca"}
               </Link>
-              <Link href="/perfil">
-                <span className="sr-only">Ir a mi perfil</span>
-                <Avatar
-                  avatarUrl={actual.profile?.avatar_url ?? null}
-                  nombre={actual.profile?.display_name ?? "?"}
-                  tamaño="sm"
-                />
-              </Link>
+              <NotificationBell userId={actual.user.id} />
+              <UserMenu
+                nombre={actual.profile?.display_name ?? "?"}
+                avatarUrl={actual.profile?.avatar_url ?? null}
+                esAdmin={actual.roles.includes("admin")}
+              />
             </>
           ) : (
             <>

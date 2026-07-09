@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatearMoneda } from "@/lib/constants";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 import { AccionesRetiro } from "./acciones-retiro";
 
 export const metadata: Metadata = { title: "Panel de administración" };
@@ -48,6 +49,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="container mx-auto max-w-5xl px-6 py-12">
+      <PanelTabs rol="admin" />
       <h1 className="font-display text-3xl font-semibold">Panel de administración</h1>
       <p className="mt-2 text-ink-soft">Vista general de la plataforma.</p>
       <Link href="/admin/libros" className="mt-2 inline-block text-sm font-medium text-wine hover:underline">

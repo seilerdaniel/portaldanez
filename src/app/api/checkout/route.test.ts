@@ -60,13 +60,13 @@ vi.mock("@/lib/mercadopago/oauth", () => ({
 }));
 
 const USUARIO = { id: "user-123", email: "lector@example.com" };
-const LIBRO_CONECTADO = {
+const LIBRO = {
   id: "book-1",
   title: "Un libro de prueba",
   price: 1000,
   author_id: "author-1",
-  profiles: { display_name: "Autora Ejemplo", mercadopago_connected: true },
 };
+const AUTOR_PUBLICO = { display_name: "Autora Ejemplo" };
 
 function crearRequest(body: unknown) {
   return new Request("http://localhost/api/checkout", {
@@ -121,10 +121,15 @@ describe("POST /api/checkout", () => {
   });
 
   it("rechaza si el autor todavía no conectó Mercado Pago", async () => {
-    builder.maybeSingle.mockResolvedValueOnce({
-      data: { ...LIBRO_CONECTADO, profiles: { ...LIBRO_CONECTADO.profiles, mercadopago_connected: false } },
-      error: null,
-    });
+    builder.maybeSingle
+      .mockResolvedValueOnce({ data: LIBRO, error: null }) // libro
+      .mockResolvedValueOnce({ data: AUTOR_PUBLICO, error: null }) // public_profiles (nombre del autor)
+      .mockResolvedValueOnce({ data: null, error: null }); // no tiene compra previa completada
+    builder.single.mockResolvedValueOnce({ data: { id: "purchase-nueva" }, error: null });
+
+    // La verificación real y autoritativa es esta: sin token del escritor,
+    // no se puede armar la preferencia con marketplace_fee.
+    getValidAccessTokenMock.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/checkout/route");
     const respuesta = await POST(
@@ -138,7 +143,8 @@ describe("POST /api/checkout", () => {
 
   it("rechaza si el usuario ya tiene el libro comprado", async () => {
     builder.maybeSingle
-      .mockResolvedValueOnce({ data: LIBRO_CONECTADO, error: null }) // libro
+      .mockResolvedValueOnce({ data: LIBRO, error: null }) // libro
+      .mockResolvedValueOnce({ data: AUTOR_PUBLICO, error: null }) // public_profiles
       .mockResolvedValueOnce({ data: { id: "purchase-vieja" }, error: null }); // ya comprado
 
     const { POST } = await import("@/app/api/checkout/route");
@@ -153,7 +159,8 @@ describe("POST /api/checkout", () => {
 
   it("crea la preferencia con marketplace_fee usando el token del escritor", async () => {
     builder.maybeSingle
-      .mockResolvedValueOnce({ data: LIBRO_CONECTADO, error: null }) // libro
+      .mockResolvedValueOnce({ data: LIBRO, error: null }) // libro
+      .mockResolvedValueOnce({ data: AUTOR_PUBLICO, error: null }) // public_profiles
       .mockResolvedValueOnce({ data: null, error: null }); // no tiene compra previa completada
     builder.single.mockResolvedValueOnce({ data: { id: "purchase-nueva" }, error: null });
 

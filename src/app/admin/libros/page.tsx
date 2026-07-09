@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatearMoneda } from "@/lib/constants";
 import { Paginador } from "@/components/ui/paginador";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 import { AccionDespublicar } from "./accion-despublicar";
 
 export const metadata: Metadata = { title: "Moderar libros" };
@@ -37,6 +38,7 @@ export default async function AdminLibrosPage({ searchParams }: AdminLibrosPageP
 
   return (
     <div className="container mx-auto max-w-4xl px-6 py-12">
+      <PanelTabs rol="admin" />
       <h1 className="font-display text-3xl font-semibold">Moderar libros</h1>
       <p className="mt-2 text-ink-soft">
         {count ?? 0} {count === 1 ? "libro en total" : "libros en total"} (publicados y borradores).

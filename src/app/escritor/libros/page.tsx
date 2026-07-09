@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Paginador } from "@/components/ui/paginador";
 import { formatearMoneda } from "@/lib/constants";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 
 export const metadata: Metadata = { title: "Mis libros" };
 
@@ -31,6 +32,7 @@ export default async function MisLibrosPage({ searchParams }: MisLibrosPageProps
 
   return (
     <div className="container mx-auto max-w-4xl px-6 py-12">
+      <PanelTabs rol="escritor" />
       <div className="flex items-center justify-between">
         <h1 className="font-display text-3xl font-semibold">Mis libros</h1>
         <Link href="/escritor/libros/nuevo">

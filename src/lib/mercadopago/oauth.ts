@@ -233,13 +233,25 @@ export async function desconectarCuentaMercadoPago(profileId: string) {
 export async function getValidAccessTokenParaEscritor(profileId: string): Promise<string | null> {
   const supabaseAdmin = createServiceRoleClient();
 
-  const { data: cuenta } = await supabaseAdmin
+  const { data: cuenta, error } = await supabaseAdmin
     .from("writer_mercadopago_accounts")
     .select("access_token, refresh_token, expires_at")
     .eq("profile_id", profileId)
     .maybeSingle();
 
-  if (!cuenta) return null;
+  if (error) {
+    console.error(
+      "[mercadopago/oauth] Error al buscar la cuenta conectada del escritor:",
+      error.message
+    );
+  }
+
+  if (!cuenta) {
+    console.error(
+      `[mercadopago/oauth] No hay cuenta de Mercado Pago conectada para el profile_id ${profileId}.`
+    );
+    return null;
+  }
 
   const vencePronto = new Date(cuenta.expires_at).getTime() - Date.now() < MARGEN_RENOVACION_MS;
 

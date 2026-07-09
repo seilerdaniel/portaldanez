@@ -106,28 +106,54 @@ export function NuevoLibroForm({ generos, profileId }: NuevoLibroFormProps) {
         ? supabase.storage.from("book-covers").getPublicUrl(rutaPortada).data.publicUrl
         : null;
 
-      const { data: libro, error: errorInsert } = await supabase
+      const slugGenerado = generarSlug(datos.title);
+
+      // No usamos .select().single() encadenado al insert: Postgres evalúa
+      // la política de SELECT sobre la fila recién insertada al pedir un
+      // RETURNING, y esa evaluación se comporta distinto en el mismo
+      // instante de la transacción que una lectura posterior separada
+      // (lo confirmamos a mano en SQL: el insert solo funciona siempre,
+      // el insert con RETURNING fallaba). Insertamos primero...
+      const { error: errorInsert } = await supabase.from("books").insert({
+        author_id: profileId,
+        title: datos.title,
+        slug: slugGenerado,
+        description: datos.description,
+        synopsis: datos.synopsis || null,
+        price: datos.price,
+        genre_id: datos.genreId,
+        language: datos.language,
+        page_count: datos.pageCount ?? null,
+        isbn: datos.isbn || null,
+        file_url: rutaLibro,
+        file_type: extensionLibro as "pdf" | "epub",
+        cover_url: coverUrl,
+        is_published: false,
+      });
+
+      if (errorInsert) {
+        console.error(
+          "[nuevo-libro] Error al insertar el libro:",
+          JSON.stringify(errorInsert, null, 2)
+        );
+        throw new Error(`No pudimos guardar el libro: ${errorInsert.message}`);
+      }
+
+      // ...y recién después lo buscamos, en una consulta aparte, por el
+      // slug único que nosotros mismos generamos.
+      const { data: libro, error: errorBusqueda } = await supabase
         .from("books")
-        .insert({
-          author_id: profileId,
-          title: datos.title,
-          slug: generarSlug(datos.title),
-          description: datos.description,
-          synopsis: datos.synopsis || null,
-          price: datos.price,
-          genre_id: datos.genreId,
-          language: datos.language,
-          page_count: datos.pageCount ?? null,
-          isbn: datos.isbn || null,
-          file_url: rutaLibro,
-          file_type: extensionLibro as "pdf" | "epub",
-          cover_url: coverUrl,
-          is_published: false,
-        })
         .select("id")
+        .eq("slug", slugGenerado)
         .single();
 
-      if (errorInsert || !libro) throw new Error("No pudimos guardar el libro.");
+      if (errorBusqueda || !libro) {
+        console.error(
+          "[nuevo-libro] El libro se guardó pero no pudimos recuperarlo:",
+          JSON.stringify(errorBusqueda, null, 2)
+        );
+        throw new Error("El libro se guardó, pero no pudimos abrirlo automáticamente. Buscalo en Mis libros.");
+      }
 
       router.push(`/escritor/libros/${libro.id}/editar`);
     } catch (err) {

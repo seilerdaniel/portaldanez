@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireUsuario } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { BookCard } from "@/components/libros/book-card";
+import { PanelTabs } from "@/components/layout/panel-tabs";
 
 export const metadata: Metadata = { title: "Mis favoritos" };
 
@@ -33,8 +34,11 @@ export default async function FavoritosPage() {
     .filter((libro): libro is LibroFavorito => !!libro)
     .map((libro) => ({ ...libro, autor: libro.profiles?.display_name ?? "—" }));
 
+  const rol = actual.roles.includes("admin") ? "admin" : actual.esEscritor ? "escritor" : "lector";
+
   return (
     <div className="container mx-auto max-w-6xl px-6 py-12">
+      <PanelTabs rol={rol} />
       <h1 className="font-display text-3xl font-semibold">Mis favoritos</h1>
 
       {libros.length > 0 ? (
