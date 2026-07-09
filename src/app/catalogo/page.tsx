@@ -1,22 +1,35 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { BookCard } from "@/components/libros/book-card";
+import { Paginador } from "@/components/ui/paginador";
 
 export const metadata: Metadata = {
   title: "Catálogo",
 };
 
+const POR_PAGINA = 20;
+
 interface CatalogoPageProps {
-  searchParams: { genero?: string; buscar?: string };
+  searchParams: { genero?: string; buscar?: string; pagina?: string };
 }
 
-async function getLibros(searchParams: CatalogoPageProps["searchParams"]) {
+async function getGeneros() {
   const supabase = createClient();
+  const { data } = await supabase.from("genres").select("id, name, slug").order("name");
+  return data ?? [];
+}
+
+async function getLibros(searchParams: CatalogoPageProps["searchParams"], generoId: string | null) {
+  const supabase = createClient();
+  const pagina = Math.max(1, parseInt(searchParams.pagina ?? "1", 10) || 1);
+  const desde = (pagina - 1) * POR_PAGINA;
+  const hasta = desde + POR_PAGINA - 1;
 
   let query = supabase
     .from("books")
     .select(
-      "slug, title, cover_url, price, average_rating, review_count, genre_id, profiles:author_id(display_name), genres:genre_id(name, slug)"
+      "slug, title, cover_url, price, average_rating, review_count, profiles:author_id(display_name), genres:genre_id(name, slug)",
+      { count: "exact" }
     )
     .eq("is_published", true)
     .order("created_at", { ascending: false });
@@ -30,35 +43,38 @@ async function getLibros(searchParams: CatalogoPageProps["searchParams"]) {
     });
   }
 
-  const { data } = await query;
-
-  let libros = (data ?? []).map((libro) => ({
-    ...libro,
-    autor: (libro.profiles as unknown as { display_name: string } | null)?.display_name ?? "—",
-    genero: (libro.genres as unknown as { name: string; slug: string } | null) ?? null,
-  }));
-
-  if (searchParams.genero) {
-    libros = libros.filter((libro) => libro.genero?.slug === searchParams.genero);
+  // Filtro por género a nivel de base de datos (no en JS después de traer
+  // todo) — es lo que permite que la paginación por rango sea correcta:
+  // si filtráramos en memoria después del .range(), la página 2 podría
+  // faltarle libros que quedaron descartados en la página 1.
+  if (generoId) {
+    query = query.eq("genre_id", generoId);
   }
 
-  return libros;
-}
+  const { data, count } = await query.range(desde, hasta);
 
-async function getGeneros() {
-  const supabase = createClient();
-  const { data } = await supabase.from("genres").select("name, slug").order("name");
-  return data ?? [];
+  const libros = (data ?? []).map((libro) => ({
+    ...libro,
+    autor: (libro.profiles as unknown as { display_name: string } | null)?.display_name ?? "—",
+  }));
+
+  return { libros, total: count ?? 0, pagina };
 }
 
 export default async function CatalogoPage({ searchParams }: CatalogoPageProps) {
-  const [libros, generos] = await Promise.all([getLibros(searchParams), getGeneros()]);
+  const generos = await getGeneros();
+  const generoSeleccionado = searchParams.genero
+    ? generos.find((g) => g.slug === searchParams.genero)
+    : null;
+
+  const { libros, total, pagina } = await getLibros(searchParams, generoSeleccionado?.id ?? null);
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
 
   return (
     <div className="container mx-auto max-w-6xl px-6 py-12">
       <h1 className="font-display text-3xl font-semibold">Catálogo</h1>
       <p className="mt-2 text-ink-soft">
-        {libros.length} {libros.length === 1 ? "libro publicado" : "libros publicados"}
+        {total} {total === 1 ? "libro publicado" : "libros publicados"}
       </p>
 
       <form className="mt-8 flex flex-wrap gap-3" role="search">
@@ -102,6 +118,13 @@ export default async function CatalogoPage({ searchParams }: CatalogoPageProps) 
           No encontramos libros con esos filtros. Probá con otra búsqueda.
         </p>
       )}
+
+      <Paginador
+        paginaActual={pagina}
+        totalPaginas={totalPaginas}
+        basePath="/catalogo"
+        searchParams={{ genero: searchParams.genero, buscar: searchParams.buscar }}
+      />
     </div>
   );
 }

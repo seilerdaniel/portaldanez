@@ -2,37 +2,44 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar } from "@/components/ui/avatar";
+import { Paginador } from "@/components/ui/paginador";
 
 export const metadata: Metadata = { title: "Autores" };
 
-export default async function AutoresPage() {
-  const supabase = createClient();
+const POR_PAGINA = 24;
 
-  // Se listan autores con al menos un libro publicado, vía la vista pública
-  // (nunca expone balance ni emails de cobro).
-  const { data } = await supabase
+interface AutoresPageProps {
+  searchParams: { pagina?: string };
+}
+
+export default async function AutoresPage({ searchParams }: AutoresPageProps) {
+  const supabase = createClient();
+  const pagina = Math.max(1, parseInt(searchParams.pagina ?? "1", 10) || 1);
+
+  // Paso 1: solo los author_id de libros publicados (liviano — un solo
+  // campo), para deduplicar y calcular la paginación sin traer perfiles
+  // enteros de golpe.
+  const { data: filas } = await supabase
     .from("books")
-    .select("author_id, profiles:author_id(id, display_name, bio, avatar_url)")
+    .select("author_id")
     .eq("is_published", true);
 
-  const autoresUnicos = new Map<
-    string,
-    { id: string; display_name: string; bio: string | null; avatar_url: string | null }
-  >();
+  const idsUnicos = Array.from(new Set((filas ?? []).map((f) => f.author_id)));
+  const total = idsUnicos.length;
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  const desde = (pagina - 1) * POR_PAGINA;
+  const idsPagina = idsUnicos.slice(desde, desde + POR_PAGINA);
 
-  for (const fila of data ?? []) {
-    const perfil = fila.profiles as unknown as {
-      id: string;
-      display_name: string;
-      bio: string | null;
-      avatar_url: string | null;
-    } | null;
-    if (perfil && !autoresUnicos.has(perfil.id)) {
-      autoresUnicos.set(perfil.id, perfil);
-    }
-  }
+  // Paso 2: recién acá traemos los perfiles completos, y SOLO para los
+  // autores de esta página — no para los 500 que pueda haber en total.
+  const { data: perfiles } = idsPagina.length
+    ? await supabase
+        .from("public_profiles")
+        .select("id, display_name, bio, avatar_url")
+        .in("id", idsPagina)
+    : { data: [] };
 
-  const autores = Array.from(autoresUnicos.values());
+  const autores = perfiles ?? [];
 
   return (
     <div className="container mx-auto max-w-5xl px-6 py-12">
@@ -59,6 +66,8 @@ export default async function AutoresPage() {
       ) : (
         <p className="mt-8 text-ink-soft">Todavía no hay autores con libros publicados.</p>
       )}
+
+      <Paginador paginaActual={pagina} totalPaginas={totalPaginas} basePath="/autores" />
     </div>
   );
 }

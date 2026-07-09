@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { solicitudRetiroSchema } from "@/lib/validation/schemas";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 /**
  * Solicitud de retiro para escritores.
@@ -23,6 +24,15 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  // Máximo 5 solicitudes de retiro por usuario cada 5 minutos.
+  const permitido = await checkRateLimit(`retiro:${user.id}`, 5, 300);
+  if (!permitido) {
+    return NextResponse.json(
+      { error: "Hiciste demasiadas solicitudes. Esperá unos minutos y probá de nuevo." },
+      { status: 429 }
+    );
   }
 
   const body = await request.json().catch(() => null);

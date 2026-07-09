@@ -3,19 +3,31 @@ import Link from "next/link";
 import { requireEscritor } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
+import { Paginador } from "@/components/ui/paginador";
 import { formatearMoneda } from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Mis libros" };
 
-export default async function MisLibrosPage() {
+const POR_PAGINA = 20;
+
+interface MisLibrosPageProps {
+  searchParams: { pagina?: string };
+}
+
+export default async function MisLibrosPage({ searchParams }: MisLibrosPageProps) {
   const actual = await requireEscritor();
   const supabase = createClient();
+  const pagina = Math.max(1, parseInt(searchParams.pagina ?? "1", 10) || 1);
+  const desde = (pagina - 1) * POR_PAGINA;
 
-  const { data: libros } = await supabase
+  const { data: libros, count } = await supabase
     .from("books")
-    .select("id, title, price, is_published, total_sales, average_rating")
+    .select("id, title, price, is_published, total_sales, average_rating", { count: "exact" })
     .eq("author_id", actual.profile!.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(desde, desde + POR_PAGINA - 1);
+
+  const totalPaginas = Math.max(1, Math.ceil((count ?? 0) / POR_PAGINA));
 
   return (
     <div className="container mx-auto max-w-4xl px-6 py-12">
@@ -49,6 +61,8 @@ export default async function MisLibrosPage() {
       ) : (
         <p className="mt-8 text-ink-soft">Todavía no publicaste ningún libro.</p>
       )}
+
+      <Paginador paginaActual={pagina} totalPaginas={totalPaginas} basePath="/escritor/libros" />
     </div>
   );
 }

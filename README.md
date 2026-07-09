@@ -158,6 +158,103 @@ faltantes. Esto es lo que se encontró y se corrigió:
   Corregido pasando `cache: "no-store"` explícito en los clientes
   server-side (`lib/supabase/server.ts` y `lib/supabase/middleware.ts`).
 
+## Split de pagos: cada escritor cobra directo (Mercado Pago Marketplace)
+
+Se reemplazó el modelo de "saldo acumulado + retiro manual" por el split
+automático de pagos de Mercado Pago:
+
+- Cada escritor conecta su propia cuenta desde `/escritor/pagos` (botón
+  "Conectar con Mercado Pago" → OAuth → vuelve conectado).
+- El checkout ahora crea la preferencia de pago con el `access_token` **del
+  escritor** (no el de la plataforma) y el campo `marketplace_fee` (el 20%,
+  en pesos). Mercado Pago divide el pago automáticamente: el 80% se
+  acredita **directo** en la cuenta del escritor, el 20% en la nuestra — en
+  la misma operación. Portal Danez nunca llega a tener la plata del
+  escritor en el medio.
+- Un libro **no se puede comprar** si su autor todavía no conectó Mercado
+  Pago — el checkout lo bloquea con un mensaje claro en vez de fallar
+  a mitad de camino.
+- El sistema viejo (`writer_payouts`, retiro manual, panel de admin para
+  procesar retiros) se mantiene como respaldo, mostrado como "sistema
+  anterior" en `/escritor/pagos`, para cualquier ajuste puntual que haga
+  falta hacer a mano — pero ya no es el flujo principal.
+
+### Nuevas variables de entorno necesarias
+
+```
+MERCADOPAGO_CLIENT_ID="..."
+MERCADOPAGO_CLIENT_SECRET="..."
+```
+
+Se consiguen en el panel de desarrolladores de Mercado Pago → tu
+aplicación → **OAuth** (son credenciales distintas del `Access Token`
+simple que ya tenías). Al crear la app, elegí el modelo de integración
+**Marketplace**.
+
+### Cosas para verificar probando en sandbox
+
+- **Elegibilidad de la cuenta**: el split de pagos ("Split de Pagos" /
+  modelo marketplace vía OAuth) puede requerir habilitación específica
+  según el tipo de cuenta de Mercado Pago Argentina. Probá el flujo
+  completo en sandbox antes de asumir que funciona en producción tal cual.
+- **Lectura del pago en el webhook**: el webhook sigue usando el
+  `MERCADOPAGO_ACCESS_TOKEN` de la plataforma para consultar el detalle del
+  pago (`GET /v1/payments/{id}`). Según la documentación, una app de
+  marketplace puede leer los pagos de sus vendedores conectados — pero si
+  en la práctica da 401/403, hay que cambiar esa consulta para usar el
+  `access_token` del escritor en vez del de la plataforma (queda comentado
+  en el código exactamente dónde).
+- **Vencimiento de credenciales**: los tokens de cada escritor duran 6
+  meses y se renuevan solos con el `refresh_token` (con margen de 1 día
+  antes de vencer). Si un escritor revoca el acceso desde su propia cuenta
+  de Mercado Pago, el checkout de sus libros va a fallar hasta que vuelva
+  a conectar.
+
+## Fase 3 completada: CI, rate limiting, paginación y tests de integración
+
+- **CI en GitHub Actions** (`.github/workflows/ci.yml`): corre lint,
+  typecheck, tests y un build completo en cada push/PR a `main`.
+- **Rate limiting** en `/api/checkout` (10 intentos/minuto por usuario) y
+  `/api/pagos/retiro` (5 cada 5 minutos), implementado en Postgres
+  (`check_rate_limit()`, migración `0007`) — sin depender de un servicio
+  externo como Redis, ya que el volumen de este proyecto no lo justifica.
+- **Paginación real** (con `.range()`, no solo cortar en el frontend) en
+  catálogo, autores, notificaciones y libros del escritor. De paso se
+  corrigió el filtro de género del catálogo, que antes filtraba en
+  JavaScript después de traer todos los libros — incompatible con
+  paginación real, porque la página 2 podía quedarse sin resultados que en
+  realidad existían.
+- **Tests de integración** de `/api/checkout` (7 casos: sin sesión, rate
+  limit, body inválido, libro inexistente, autor sin conectar, compra
+  duplicada, y que la preferencia se arme con el token del escritor +
+  `marketplace_fee` correcto) y **tests de seguridad** de la verificación
+  de firma del webhook (11 casos, incluyendo rechazo de firmas fabricadas,
+  replay attacks, y fail-closed sin secreto configurado). Total: 33 tests.
+
+## Moderación de contenido para el admin
+
+Desde la primera auditoría quedó marcado como hueco: cualquiera puede
+publicar sin revisión previa, y no había ninguna forma de bajar un libro
+problemático. Se agregó:
+
+- `/admin/libros`: listado de todos los libros (publicados y borradores),
+  con búsqueda por título y paginación.
+- Acción de **despublicar con motivo**: el admin escribe un motivo breve,
+  el libro deja de aparecer en el catálogo, y el autor recibe una
+  notificación con el motivo exacto.
+- Migración `0008_admin_moderacion.sql`: agrega el permiso de UPDATE que
+  le faltaba al admin sobre la tabla `books` (antes solo tenía SELECT).
+
+- Migración `0009_mercadopago_oauth_state.sql`: agrega otra tabla al
+  patrón anterior, para el "state" del flujo OAuth (protección CSRF). La
+  primera versión lo guardaba en una cookie httpOnly del navegador, pero
+  en la práctica esa cookie no siempre sobrevivía el viaje de ida y vuelta
+  a Mercado Pago en algunos entornos de desarrollo (Windows/Git Bash).
+  Como el usuario ya está autenticado en Portal Danez tanto al iniciar
+  como al volver, se guarda el "state" del lado del servidor atado a su
+  `profile_id` en vez de depender de una cookie — más robusto y sin
+  ninguna dependencia del comportamiento de cookies del navegador.
+
 ## Setup
 
 ```bash
@@ -173,6 +270,12 @@ cp .env.example .env.local   # completar con tus credenciales
    3. `supabase/migrations/0003_allow_purchase_retry.sql`
    4. `supabase/migrations/0004_admin_role.sql`
    5. `supabase/migrations/0005_grant_table_privileges.sql`
+   6. `supabase/migrations/0006_mercadopago_marketplace.sql`
+   7. `supabase/migrations/0007_rate_limiting.sql`
+   8. `supabase/migrations/0008_admin_moderacion.sql`
+   9. `supabase/migrations/0009_mercadopago_oauth_state.sql`
+   10. `supabase/migrations/0010_grant_service_role_tablas_nuevas.sql`
+   11. `supabase/migrations/0011_grant_service_role_todas_las_tablas.sql`
 3. Completá `.env.local` con las claves de Supabase y Mercado Pago.
 4. `npm run dev` y abrí `http://localhost:3000`.
 

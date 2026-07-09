@@ -49,15 +49,27 @@ export default async function DashboardEscritorPage() {
         </Link>
       </div>
 
+      {!actual.profile?.mercadopago_connected && (
+        <div className="mt-6 rounded border border-mustard/40 bg-mustard/10 p-4 text-sm">
+          <p className="font-medium">
+            Todavía no conectaste tu cuenta de Mercado Pago — nadie puede
+            comprarte libros hasta que lo hagas.
+          </p>
+          <Link href="/escritor/pagos" className="mt-1 inline-block text-wine hover:underline">
+            Conectar ahora →
+          </Link>
+        </div>
+      )}
+
       <div className="mt-8 grid gap-6 sm:grid-cols-3">
         <div className="rounded border border-ink/10 bg-paper-card p-6">
-          <p className="text-sm text-ink-soft">Saldo disponible</p>
+          <p className="text-sm text-ink-soft">Ganado en total</p>
           <p className="mt-1 font-mono text-2xl font-semibold text-wine">
-            {formatearMoneda(actual.profile?.balance ?? 0)}
+            {formatearMoneda(actual.profile?.total_earnings ?? 0)}
           </p>
           {montoEnCamino > 0 && (
             <p className="mt-1 text-xs text-ink-soft">
-              + {formatearMoneda(montoEnCamino)} en camino
+              + {formatearMoneda(montoEnCamino)} en retiros manuales pendientes
             </p>
           )}
         </div>

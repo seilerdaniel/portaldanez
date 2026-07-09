@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { checkoutSchema } from "@/lib/validation/schemas";
 import { calcularReparto } from "@/lib/constants";
+import { getValidAccessTokenParaEscritor } from "@/lib/mercadopago/oauth";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -12,6 +14,17 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Tenés que ingresar para comprar." }, { status: 401 });
+  }
+
+  // Máximo 10 intentos de checkout por usuario cada 60 segundos — deja de
+  // sobra para reintentos legítimos, pero frena un script que spamee el
+  // endpoint generando preferencias de pago de más.
+  const permitido = await checkRateLimit(`checkout:${user.id}`, 10, 60);
+  if (!permitido) {
+    return NextResponse.json(
+      { error: "Hiciste demasiados intentos. Esperá un minuto y probá de nuevo." },
+      { status: 429 }
+    );
   }
 
   const body = await request.json().catch(() => null);
@@ -37,13 +50,27 @@ export async function POST(request: Request) {
 
   const { data: libro, error: errorLibro } = await supabase
     .from("books")
-    .select("id, title, price, author_id, profiles:author_id(display_name)")
+    .select(
+      "id, title, price, author_id, profiles:author_id(display_name, mercadopago_connected)"
+    )
     .eq("id", bookId)
     .eq("is_published", true)
     .maybeSingle();
 
   if (errorLibro || !libro) {
     return NextResponse.json({ error: "No encontramos ese libro." }, { status: 404 });
+  }
+
+  const autorInfo = libro.profiles as unknown as {
+    display_name: string;
+    mercadopago_connected: boolean;
+  } | null;
+
+  if (!autorInfo?.mercadopago_connected) {
+    return NextResponse.json(
+      { error: "Este autor todavía no configuró cómo cobrar. Probá de nuevo más tarde." },
+      { status: 409 }
+    );
   }
 
   const { data: compraExistente } = await supabase
@@ -89,19 +116,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No pudimos registrar la compra." }, { status: 500 });
   }
 
-  const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
-  if (!accessToken) {
-    return NextResponse.json({ error: "Mercado Pago no está configurado." }, { status: 500 });
+  const accessTokenEscritor = await getValidAccessTokenParaEscritor(libro.author_id);
+  if (!accessTokenEscritor) {
+    return NextResponse.json(
+      { error: "Este autor todavía no configuró cómo cobrar. Probá de nuevo más tarde." },
+      { status: 409 }
+    );
   }
-
-  const autor = libro.profiles as unknown as { display_name: string } | null;
 
   const preferencia = {
     items: [
       {
         id: libro.id,
         title: libro.title,
-        description: `Ebook por ${autor?.display_name ?? "autor independiente"}`,
+        description: `Ebook por ${autorInfo.display_name ?? "autor independiente"}`,
         quantity: 1,
         currency_id: "ARS",
         unit_price: libro.price,
@@ -117,11 +145,19 @@ export async function POST(request: Request) {
     auto_return: "approved",
     notification_url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/webhooks/mercadopago`,
     external_reference: compra.id,
+    // Clave del split de pagos: se crea la preferencia con el access_token
+    // DEL ESCRITOR (no el de la plataforma), y marketplace_fee es el monto
+    // (en pesos, no %) que Mercado Pago nos retiene a nosotros — el resto
+    // se acredita directo a la cuenta del escritor en la misma operación.
+    marketplace_fee: comision,
   };
 
   const respuestaMp = await fetch("https://api.mercadopago.com/checkout/preferences", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessTokenEscritor}`,
+    },
     body: JSON.stringify(preferencia),
   });
 

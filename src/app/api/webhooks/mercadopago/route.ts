@@ -1,44 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-
-async function calcularHmac(secreto: string, mensaje: string) {
-  const encoder = new TextEncoder();
-  const clave = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secreto),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const firma = await crypto.subtle.sign("HMAC", clave, encoder.encode(mensaje));
-  return Array.from(new Uint8Array(firma))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function verificarFirma(
-  xSignature: string | null,
-  xRequestId: string | null,
-  dataId: string,
-  secreto: string
-) {
-  if (!xSignature || !xRequestId) return false;
-
-  const partes = Object.fromEntries(
-    xSignature.split(",").map((p) => p.trim().split("=") as [string, string])
-  );
-  const ts = partes.ts;
-  const hash = partes.v1;
-  if (!ts || !hash) return false;
-
-  // Ventana de 5 minutos para evitar reproducir eventos viejos.
-  if (Date.now() / 1000 - parseInt(ts, 10) > 300) return false;
-
-  const manifiesto = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
-  const hashEsperado = await calcularHmac(secreto, manifiesto);
-
-  return hashEsperado === hash;
-}
+import { verificarFirmaMercadoPago } from "@/lib/mercadopago/webhook-signature";
 
 export async function POST(request: Request) {
   const secreto = process.env.MERCADOPAGO_WEBHOOK_SECRET;
@@ -56,12 +18,22 @@ export async function POST(request: Request) {
   const xSignature = request.headers.get("x-signature");
   const xRequestId = request.headers.get("x-request-id");
 
-  if (!(await verificarFirma(xSignature, xRequestId, paymentId, secreto))) {
+  if (!(await verificarFirmaMercadoPago(xSignature, xRequestId, paymentId, secreto))) {
     return NextResponse.json({ error: "Firma inválida" }, { status: 403 });
   }
 
   const supabase = createServiceRoleClient();
 
+  // Nota importante para probar en sandbox: ahora que los pagos se crean
+  // con el access_token DEL ESCRITOR (ver /api/checkout), este GET usa el
+  // access_token de LA PLATAFORMA para leer los detalles del pago. Según
+  // la documentación de Mercado Pago, una app de marketplace puede ver los
+  // pagos de sus vendedores conectados (por eso existen los reportes
+  // unificados de ventas) — pero si en la práctica esta llamada devuelve
+  // 401/403, es señal de que hace falta usar el token del escritor acá
+  // también. En ese caso, resolvé el escritor primero con una consulta
+  // liviana antes de este fetch (por ejemplo, buscando el book_id en el
+  // metadata que ya viajaba en la preferencia original).
   const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
   const respuestaMp = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -136,15 +108,19 @@ export async function POST(request: Request) {
 
       const { data: perfil } = await supabase
         .from("profiles")
-        .select("id, user_id, balance, total_earnings")
+        .select("id, user_id, total_earnings")
         .eq("id", libro.author_id)
         .maybeSingle();
 
       if (perfil) {
+        // Ya NO se acredita `balance`: con el split de pagos de Mercado
+        // Pago (marketplace_fee), el 80% se transfiere directo a la cuenta
+        // del escritor en la misma operación — Portal Danez nunca llega a
+        // tener esa plata, así que no hay nada que "retirar" después.
+        // `total_earnings` se mantiene solo como estadística histórica.
         await supabase
           .from("profiles")
           .update({
-            balance: Number(perfil.balance) + Number(compra.author_earning),
             total_earnings: Number(perfil.total_earnings) + Number(compra.author_earning),
           })
           .eq("id", perfil.id);
@@ -161,7 +137,7 @@ export async function POST(request: Request) {
             user_id: perfil.user_id,
             type: "sale",
             title: "¡Nueva venta!",
-            message: `Vendiste una copia de "${libro.title}".`,
+            message: `Vendiste una copia de "${libro.title}" — ya se acreditó en tu cuenta de Mercado Pago.`,
             data: { book_id: libro.id, amount: compra.author_earning },
           },
         ]);

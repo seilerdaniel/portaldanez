@@ -46,6 +46,9 @@ export interface Database {
           location: string | null;
           social_links: Record<string, string>;
           mercadopago_email: string | null;
+          mercadopago_connected: boolean;
+          mercadopago_collector_id: string | null;
+          mercadopago_connected_at: string | null;
           balance: number;
           total_earnings: number;
           created_at: string;
@@ -211,6 +214,47 @@ export interface Database {
         Update: Record<string, never>;
         Relationships: [];
       };
+      mercadopago_oauth_states: {
+        Row: {
+          profile_id: string;
+          state: string;
+          expires_at: string;
+        };
+        Insert: { profile_id: string; state: string; expires_at: string };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      writer_mercadopago_accounts: {
+        Row: {
+          profile_id: string;
+          mp_user_id: string;
+          access_token: string;
+          refresh_token: string;
+          public_key: string | null;
+          scope: string | null;
+          expires_at: string;
+          connected_at: string;
+          updated_at: string;
+        };
+        // Sin políticas RLS a propósito: solo la service role key opera
+        // esta tabla (ver lib/mercadopago/oauth.ts). Nunca se llama desde
+        // el cliente del browser ni con la anon key.
+        Insert: {
+          profile_id: string;
+          mp_user_id: string;
+          access_token: string;
+          refresh_token: string;
+          public_key?: string | null;
+          scope?: string | null;
+          expires_at: string;
+        };
+        Update: Partial<{
+          access_token: string;
+          refresh_token: string;
+          expires_at: string;
+        }>;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -234,6 +278,10 @@ export interface Database {
       };
       is_writer: {
         Args: { _user_id: string };
+        Returns: boolean;
+      };
+      check_rate_limit: {
+        Args: { _key: string; _max_requests: number; _window_seconds: number };
         Returns: boolean;
       };
     };
